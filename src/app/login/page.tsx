@@ -1,8 +1,10 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
+import { useRouter } from "next/navigation" // Use useRouter for client-side navigation
+import { signIn } from 'aws-amplify/auth';
+
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -11,25 +13,29 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Globe, Eye, EyeOff, Github, AlertCircle, Loader2 } from "lucide-react"
 import Link from "next/link"
-import { redirect } from "next/navigation"
 
 interface LoginFormData {
-  email: string
+  username: string
   password: string
   rememberMe: boolean
 }
 
 interface LoginErrors {
-  email?: string
+  username?: string
   password?: string
   general?: string
 }
 
 export default function LoginPage() {
+  const router = useRouter() // Initialize useRouter
+
   const [formData, setFormData] = useState<LoginFormData>({
-    email: "",
+    username: "",
     password: "",
-    rememberMe: false,
+    rememberMe: false, // Cognito's Auth.signIn handles session persistence by default.
+                      // 'rememberMe' could map to a custom attribute or be used to control
+                      // session validity if you implement custom session management beyond Amplify's default.
+                      // For standard Cognito, this might not directly translate unless you customize.
   })
 
   const [errors, setErrors] = useState<LoginErrors>({})
@@ -39,17 +45,14 @@ export default function LoginPage() {
   const validateForm = (): LoginErrors => {
     const newErrors: LoginErrors = {}
 
-    // Email validation
-    if (!formData.email) {
-      newErrors.email = "Email is required"
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      newErrors.email = "Please enter a valid email address"
+    // Username validation (simpler than email regex)
+    if (!formData.username) {
+      newErrors.username = "Username is required" // Changed error message
     }
 
-    // Password validation
     if (!formData.password) {
       newErrors.password = "Password is required"
-    } else if (formData.password.length < 6) {
+    } else if (formData.password.length < 6) { // Cognito default minimum is 8, adjust as per your User Pool settings
       newErrors.password = "Password must be at least 6 characters"
     }
 
@@ -59,12 +62,10 @@ export default function LoginPage() {
   const handleInputChange = (field: keyof LoginFormData, value: string | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
 
-    // Clear specific field error when user starts typing
     if (errors[field as keyof LoginErrors]) {
       setErrors((prev) => ({ ...prev, [field]: undefined }))
     }
 
-    // Clear general error when user makes changes
     if (errors.general) {
       setErrors((prev) => ({ ...prev, general: undefined }))
     }
@@ -78,43 +79,48 @@ export default function LoginPage() {
 
     if (Object.keys(newErrors).length === 0) {
       setIsSubmitting(true)
+      setErrors({ general: undefined }); // Clear previous general errors
 
       try {
-        // Simulate API call
-        await new Promise((resolve, reject) => {
-          setTimeout(() => {
-            // Simulate different outcomes
-            if (formData.email === "demo@example.com" && formData.password === "password123") {
-              resolve("success")
-              redirect('/dashboard')
-            } else {
-              reject(new Error("Invalid credentials"))
-            }
-          }, 1500)
-        })
+        // Authenticate user with Cognito
+        await signIn({username: formData.username, password: formData.password});
 
-        // Redirect to dashboard on success
         console.log("Login successful, redirecting to dashboard...")
-        
-        // In a real app: router.push('/dashboard')
-      } catch (error) {
-        setErrors({
-          general: "Invalid email or password. Please check your credentials and try again.",
-        })
+        router.push('/dashboard') // Client-side redirect
+      } catch (error: any) { // Type 'any' for now, or define specific Amplify Auth errors
+        console.error("Amplify Auth Error:", error);
+        let errorMessage = "An unexpected error occurred. Please try again.";
+
+        // Handle specific Cognito error codes
+        switch (error.code) {
+          case 'UserNotFoundException':
+          case 'NotAuthorizedException':
+            errorMessage = "Invalid username or password. Please check your credentials and try again.";
+            break;
+          case 'UserNotConfirmedException':
+            errorMessage = "Your account is not confirmed. Please verify your username.";
+            // Optionally, redirect to a confirmation page: router.push('/confirm-signup');
+            break;
+          case 'PasswordResetRequiredException':
+            errorMessage = "Password reset is required. Please reset your password.";
+            // Optionally, redirect to a forgot password page: router.push('/forgot-password');
+            break;
+          case 'EmptyChallengeException': // For MFA or new password required flows
+            errorMessage = "Further authentication required. Please follow the instructions.";
+            // You might need to handle this more deeply, e.g., prompt for MFA code
+            break;
+          default:
+            errorMessage = error.message || errorMessage; // Use Amplify's error message if available
+        }
+        setErrors({ general: errorMessage });
       } finally {
         setIsSubmitting(false)
       }
     }
   }
 
-  const handleSocialLogin = (provider: string) => {
-    console.log(`Login with ${provider}`)
-    // Implement social login logic here
-  }
-
   const handleForgotPassword = () => {
-    console.log("Forgot password clicked")
-    // In a real app: router.push('/forgot-password')
+    router.push('/forgot-password'); // Assuming you have a /forgot-password page
   }
 
   return (
@@ -146,30 +152,30 @@ export default function LoginPage() {
               </Alert>
             )}
 
-            {/* Demo Credentials Info */}
+            {/* Demo Credentials Info (Still useful for development, remove in production) */}
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-6">
-              <p className="text-sm text-blue-800 font-medium mb-1">Demo Credentials:</p>
-              <p className="text-xs text-blue-700">Email: demo@example.com</p>
-              <p className="text-xs text-blue-700">Password: password123</p>
+              <p className="text-sm text-blue-800 font-medium mb-1">Demo Credentials (Set in Cognito):</p>
+              <p className="text-xs text-blue-700">username: user01</p>
+              <p className="text-xs text-blue-700">Password: user01</p>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Email Field */}
+              {/* username Field */}
               <div className="space-y-2">
-                <Label htmlFor="email">Email Address</Label>
+                <Label htmlFor="username">Username Address</Label>
                 <Input
-                  id="email"
-                  type="email"
-                  placeholder="Enter your email"
-                  value={formData.email}
-                  onChange={(e) => handleInputChange("email", e.target.value)}
-                  className={errors.email ? "border-red-500 focus:border-red-500" : ""}
+                  id="username"
+                  type="username"
+                  placeholder="Enter your username"
+                  value={formData.username}
+                  onChange={(e) => handleInputChange("username", e.target.value)}
+                  className={errors.username ? "border-red-500 focus:border-red-500" : ""}
                   disabled={isSubmitting}
                 />
-                {errors.email && (
+                {errors.username && (
                   <p className="text-sm text-red-600 flex items-center gap-1">
                     <AlertCircle className="w-4 h-4" />
-                    {errors.email}
+                    {errors.username}
                   </p>
                 )}
               </div>
@@ -183,6 +189,7 @@ export default function LoginPage() {
                     variant="link"
                     className="px-0 font-normal text-sm text-blue-600 hover:text-blue-800"
                     onClick={handleForgotPassword}
+                    disabled={isSubmitting}
                   >
                     Forgot Password?
                   </Button>
@@ -220,7 +227,7 @@ export default function LoginPage() {
                 )}
               </div>
 
-              {/* Remember Me */}
+              {/* Remember Me - (Note: Amplify Auth.signIn typically handles session persistence) */}
               <div className="flex items-center space-x-2">
                 <Checkbox
                   id="remember"
@@ -232,7 +239,7 @@ export default function LoginPage() {
                   htmlFor="remember"
                   className="text-sm font-normal leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                 >
-                  Remember me for 30 days
+                  Remember me for this session
                 </Label>
               </div>
 
@@ -256,57 +263,6 @@ export default function LoginPage() {
                     Sign up for free
                   </Link>
                 </p>
-              </div>
-
-              {/* Divider */}
-              <div className="relative">
-                <div className="absolute inset-0 flex items-center">
-                  <span className="w-full border-t" />
-                </div>
-                <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-white px-2 text-gray-500">Or continue with</span>
-                </div>
-              </div>
-
-              {/* Social Login Options */}
-              <div className="grid grid-cols-2 gap-4">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => handleSocialLogin("Google")}
-                  className="w-full"
-                  disabled={isSubmitting}
-                >
-                  <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24">
-                    <path
-                      fill="currentColor"
-                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                    />
-                    <path
-                      fill="currentColor"
-                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                    />
-                    <path
-                      fill="currentColor"
-                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                    />
-                    <path
-                      fill="currentColor"
-                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                    />
-                  </svg>
-                  Google
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => handleSocialLogin("GitHub")}
-                  className="w-full"
-                  disabled={isSubmitting}
-                >
-                  <Github className="w-4 h-4 mr-2" />
-                  GitHub
-                </Button>
               </div>
             </form>
           </CardContent>

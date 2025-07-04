@@ -1,6 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
+import { fetchAuthSession, signOut } from 'aws-amplify/auth'; // Gen 6 Auth imports
+
+// Import your existing UI components
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -48,45 +52,17 @@ import {
   Clock,
   XCircle,
   AlertTriangle,
+  Loader2,
 } from "lucide-react"
 import Link from "next/link"
-import { redirect } from "next/dist/server/api-utils"
 
-// Sample data for demonstration
+// Sample data for demonstration (rest of your component's data)
 const sampleSites = [
-  {
-    id: 1,
-    name: "My Portfolio",
-    domain: "portfolio.OnPretty.dev",
-    status: "active",
-    lastDeployed: "2 hours ago",
-    visits: "1.2K",
-  },
-  {
-    id: 2,
-    name: "Company Website",
-    domain: "www.mycompany.com",
-    status: "active",
-    lastDeployed: "1 day ago",
-    visits: "5.8K",
-  },
-  {
-    id: 3,
-    name: "Blog Site",
-    domain: "blog.OnPretty.dev",
-    status: "provisioning",
-    lastDeployed: "Deploying...",
-    visits: "0",
-  },
-  {
-    id: 4,
-    name: "Landing Page",
-    domain: "landing.OnPretty.dev",
-    status: "suspended",
-    lastDeployed: "1 week ago",
-    visits: "892",
-  },
-]
+  { id: 1, name: "My Portfolio", domain: "portfolio.OnPretty.dev", status: "active", lastDeployed: "2 hours ago", visits: "1.2K" },
+  { id: 2, name: "Company Website", domain: "www.mycompany.com", status: "active", lastDeployed: "1 day ago", visits: "5.8K" },
+  { id: 3, name: "Blog Site", domain: "blog.OnPretty.dev", status: "provisioning", lastDeployed: "Deploying...", visits: "0" },
+  { id: 4, name: "Landing Page", domain: "landing.OnPretty.dev", status: "suspended", lastDeployed: "1 week ago", visits: "892" },
+];
 
 const usageStats = {
   totalStorage: "2.4 GB",
@@ -95,32 +71,69 @@ const usageStats = {
   bandwidthLimit: "100 GB",
   totalSites: 4,
   activeSites: 2,
-}
+};
 
-// Navigation items
 const navItems = [
-  {
-    title: "My Sites",
-    url: "/dashboard",
-    icon: Globe,
-    isActive: true,
-  },
-  {
-    title: "Account Settings",
-    url: "/account",
-    icon: Settings,
-  },
-  {
-    title: "Help & Support",
-    url: "#",
-    icon: HelpCircle,
-  },
-]
+  { title: "My Sites", url: "/dashboard", icon: Globe, isActive: true },
+  { title: "Account Settings", url: "/account", icon: Settings },
+  { title: "Help & Support", url: "#", icon: HelpCircle },
+];
 
 export default function DashboardPage() {
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState<number | null>(null)
+  const router = useRouter();
+  // user state will now hold the Cognito Identity Pool credentials or user info derived from Auth0
+  const [user, setUser] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<number | null>(null);
 
-  const getStatusBadge = (status: string) => {
+  // Function to get Cognito credentials from Auth0 token via Identity Pools
+  async function getCognitoCredentialsAndCheckSession() {
+    try {
+      const fetchSessionResult = await fetchAuthSession();
+      console.log('fetchSessionResult: ', fetchSessionResult);
+
+      if (fetchSessionResult.tokens) {
+        setUser({
+          username: fetchSessionResult.tokens.idToken?.payload["cognito:username"],
+          attributes: {
+            email: fetchSessionResult.tokens.idToken?.payload.email,
+            name: fetchSessionResult.tokens.idToken?.payload["cognito:username"],
+          }
+        });
+      } else {
+        // No valid session, redirect to login
+        console.error("No valid federated session found, redirecting to login.");
+        router.push('/login');
+      }
+    } catch (err) {
+      console.error("Error getting federated credentials or session:", err);
+      // Clear user and redirect on error
+      setUser(null);
+      router.push('/login');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    getCognitoCredentialsAndCheckSession();
+  }, [router]);
+
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-blue-50">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+        <p className="ml-2 text-lg text-gray-700">Loading dashboard...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return null; // Will be redirected by useEffect
+  }
+
+  const getStatusBadge = (status: string) => { /* ... (unchanged) ... */
     switch (status) {
       case "active":
         return (
@@ -156,13 +169,30 @@ export default function DashboardPage() {
   const handleDeleteSite = (siteId: number) => {
     console.log(`Deleting site ${siteId}`)
     setShowDeleteConfirm(null)
-    // Implement delete logic here
+    // Implement delete logic here, potentially using federated AWS credentials
   }
 
-  const handleLogout = () => {
-    console.log("Logging out...")
-    // Implement logout logic here
+  const handleLogout = async () => {
+    try {
+      // In a federated setup, `signOut` from Amplify's auth might clear local Amplify state
+      // but you'll also need to sign out from Auth0 itself to invalidate their session.
+      await signOut(); // Clears Amplify's local session/credentials
+      console.log("Logged out from Amplify.");
+      // Redirect to Auth0 logout endpoint, which then redirects to your app's login page
+      // Example: window.location.href = `https://YOUR_AUTH0_DOMAIN/v2/logout?client_id=YOUR_AUTH0_CLIENT_ID&returnTo=${encodeURIComponent(window.location.origin + '/login')}`;
+      router.push('/login'); // Redirect to your app's login page
+    } catch (error) {
+      console.error("Error signing out:", error);
+      alert("Failed to log out. Please try again.");
+    }
   }
+
+  // Get user attributes for display
+  // Adapt this to how your `user` state is populated from Auth0 via `getFromAuth0`
+  const userEmail = user?.attributes?.email || user?.username || 'N/A';
+  const userName = user?.attributes?.name || user?.username || 'User';
+  const userInitials = userName ? userName.split(' ').map((n: string) => n[0]).join('').toUpperCase().substring(0, 2) : 'JD';
+
 
   return (
     <SidebarProvider>
@@ -215,11 +245,11 @@ export default function DashboardPage() {
                     className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
                   >
                     <Avatar className="h-8 w-8 rounded-lg">
-                      <AvatarFallback className="rounded-lg">JD</AvatarFallback>
+                      <AvatarFallback className="rounded-lg">{userInitials}</AvatarFallback>
                     </Avatar>
                     <div className="grid flex-1 text-left text-sm leading-tight">
-                      <span className="truncate font-semibold">John Doe</span>
-                      <span className="truncate text-xs">john@example.com</span>
+                      <span className="truncate font-semibold">{userName}</span>
+                      <span className="truncate text-xs">{userEmail}</span>
                     </div>
                     <ChevronDown className="ml-auto size-4" />
                   </SidebarMenuButton>
@@ -233,11 +263,11 @@ export default function DashboardPage() {
                   <DropdownMenuLabel className="p-0 font-normal">
                     <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
                       <Avatar className="h-8 w-8 rounded-lg">
-                        <AvatarFallback className="rounded-lg">JD</AvatarFallback>
+                        <AvatarFallback className="rounded-lg">{userInitials}</AvatarFallback>
                       </Avatar>
                       <div className="grid flex-1 text-left text-sm leading-tight">
-                        <span className="truncate font-semibold">John Doe</span>
-                        <span className="truncate text-xs">john@example.com</span>
+                        <span className="truncate font-semibold">{userName}</span>
+                        <span className="truncate text-xs">{userEmail}</span>
                       </div>
                     </div>
                   </DropdownMenuLabel>
@@ -322,7 +352,7 @@ export default function DashboardPage() {
                   </div>
 
                   <div className="flex gap-2">
-                    <Link href={`/site/${site.id}`} className="flex-1 bg-transparent">
+                    <Link href={`/site`} className="flex-1 bg-transparent">
                       <Button size="sm" variant="outline" className="w-full">
                         <Settings2 className="w-3 h-3 mr-1" />
                         Manage
