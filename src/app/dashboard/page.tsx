@@ -55,6 +55,29 @@ import {
   Loader2,
 } from "lucide-react"
 import Link from "next/link"
+import { useGetWebsites } from "@/hooks/useGetWebsites";
+
+type Item = {
+  data: {
+    distributionEndpoint: string;
+    distributionId: string;
+    domains: Array<{
+      Domain: string;
+      Status: string;
+    }>;
+    name: string;
+    tenantOwnerIdentityId: string;
+    tenantOwnerSub: string;
+  };
+  pk: string;
+  sk: string;
+};
+
+type Website = {
+  website: string;
+  domain: string;
+  status: string;
+};
 
 // Sample data for demonstration (rest of your component's data)
 const sampleSites = [
@@ -81,16 +104,25 @@ const navItems = [
 
 export default function DashboardPage() {
   const router = useRouter();
+  const { data, isLoading } = useGetWebsites();
+
   // user state will now hold the Cognito Identity Pool credentials or user info derived from Auth0
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<number | null>(null);
 
+  const websites: Website[] = data?.data?.Items.map(
+    (item: Item): Website => ({
+      website: item.data.name,
+      domain: item.data.domains[0].Domain,
+      status: item.data.domains[0].Status,
+    })
+  ) || [];
+
   // Function to get Cognito credentials from Auth0 token via Identity Pools
   async function getCognitoCredentialsAndCheckSession() {
     try {
       const fetchSessionResult = await fetchAuthSession();
-      console.log('fetchSessionResult: ', fetchSessionResult);
 
       if (fetchSessionResult.tokens) {
         setUser({
@@ -120,7 +152,7 @@ export default function DashboardPage() {
   }, [router]);
 
 
-  if (loading) {
+  if (loading || isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-blue-50">
         <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
@@ -334,12 +366,12 @@ export default function DashboardPage() {
 
           {/* Sites Grid */}
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {sampleSites.map((site) => (
-              <Card key={site.id} className="hover:shadow-lg transition-shadow">
+            {websites.map((site, index) => (
+              <Card key={index} className="hover:shadow-lg transition-shadow">
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
                     <div className="space-y-1">
-                      <CardTitle className="text-lg">{site.name}</CardTitle>
+                      <CardTitle className="text-lg">{site.website}</CardTitle>
                       <CardDescription className="text-sm font-mono">{site.domain}</CardDescription>
                     </div>
                     {getStatusBadge(site.status)}
@@ -347,8 +379,8 @@ export default function DashboardPage() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="flex justify-between text-sm text-gray-600">
-                    <span>Last deployed: {site.lastDeployed}</span>
-                    <span>{site.visits} visits</span>
+                    <span>Last deployed: 1 day ago</span>
+                    <span>5.8K visits</span>
                   </div>
 
                   <div className="flex gap-2">
@@ -366,20 +398,20 @@ export default function DashboardPage() {
                       size="sm"
                       variant="outline"
                       className="text-red-600 hover:text-red-700 hover:bg-red-50 bg-transparent"
-                      onClick={() => setShowDeleteConfirm(site.id)}
+                      onClick={() => setShowDeleteConfirm(index)}
                     >
                       <Trash2 className="w-3 h-3" />
                     </Button>
                   </div>
 
-                  {showDeleteConfirm === site.id && (
+                  {showDeleteConfirm === index && (
                     <div className="p-3 bg-red-50 border border-red-200 rounded-md">
                       <p className="text-sm text-red-800 mb-2">Are you sure you want to delete this site?</p>
                       <div className="flex gap-2">
                         <Button
                           size="sm"
                           variant="destructive"
-                          onClick={() => handleDeleteSite(site.id)}
+                          onClick={() => handleDeleteSite(index)}
                           className="flex-1"
                         >
                           Delete

@@ -1,6 +1,9 @@
 "use client";
 
 import { Amplify } from 'aws-amplify';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+const queryClient = new QueryClient()
 
 Amplify.configure({
   Auth: {
@@ -19,5 +22,5 @@ Amplify.configure({
 });
 
 export function AmplifyProvider({ children }: { children: React.ReactNode }) {
-  return <>{children}</>;
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
 }
