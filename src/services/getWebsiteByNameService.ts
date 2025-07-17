@@ -1,7 +1,7 @@
 import { getBearerToken } from "./getBearerToken";
 
-export const fetchWebsites = async () => {
-  const url = `/api/tenants`;
+export const getWebsiteByNameService = async (site: string) => {
+  const url = `/api/tenants/${site}`;
   const token = await getBearerToken();
 
   try {
@@ -15,7 +15,7 @@ export const fetchWebsites = async () => {
 
     if (response.status === 404) {
       const errorData = await response.json();
-      if (errorData.message === "No websites found") {
+      if (errorData.message === "No websites found with the specified name") {
         return [];
       }
     }
@@ -26,9 +26,9 @@ export const fetchWebsites = async () => {
     return response.json();
   } catch (error) {
     if (error instanceof Error &&
-      error.message === "No websites found") {
+      error.message === "No websites found with the specified name") {
       return [];
     }
     throw error;
   }
-};
+}

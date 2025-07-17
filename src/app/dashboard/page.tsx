@@ -384,7 +384,7 @@ export default function DashboardPage() {
                   </div>
 
                   <div className="flex gap-2">
-                    <Link href={`/site`} className="flex-1 bg-transparent">
+                    <Link href={`/${site.website}`} className="flex-1 bg-transparent">
                       <Button size="sm" variant="outline" className="w-full">
                         <Settings2 className="w-3 h-3 mr-1" />
                         Manage

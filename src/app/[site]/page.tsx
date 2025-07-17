@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect, use } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -45,18 +45,12 @@ import {
   Zap,
   HardDrive,
   Wifi,
+  LucideProps,
 } from "lucide-react"
 import Link from "next/link"
-
-// Sample data
-const siteData = {
-  id: "1",
-  name: "My Awesome Blog",
-  url: "myblog.OnPretty.dev",
-  status: "active",
-  customDomain: "www.myblog.com",
-  sslStatus: "active",
-}
+import { useGetFileList } from "@/hooks/useGetFileList"
+import { useGetWebsites } from "@/hooks/useGetWebsites"
+import { useGetWebsiteByName } from "@/hooks/useGetWebsiteByName"
 
 const sampleFiles = [
   {
@@ -103,9 +97,54 @@ const navigationItems = [
   { id: "metrics", label: "Usage Metrics", icon: BarChart3 },
 ]
 
-export default function SiteManagementPage() {
+export default function SiteManagementPage({ params }: { params: Promise<{ site: string }> }) {
+  const { site } = use(params);
+
+  const { data: fetchedFiles, isLoading, isError, error } = useGetFileList(site);
+  const [files, setFiles] = useState<{
+    id: any;
+    name: any;
+    type: string;
+    size: string;
+    modified: string;
+    icon: React.ForwardRefExoticComponent<Omit<LucideProps, "ref"> & React.RefAttributes<SVGSVGElement>>;
+  }[]>([])
+
+  const { data: tenat } = useGetWebsiteByName({ site });
+
+  useEffect(() => {
+    if (fetchedFiles) {
+      const transformedFiles = fetchedFiles.items.map((file: any) => ({ // Adjust 'any' to a proper type based on your S3 list output
+        id: file.eTag, // Or some unique identifier from S3
+        name: file.path.split('/').pop(), // Get file name from key
+        type: file.path.endsWith('/') ? 'folder' : 'file', // Basic check for folder
+        size: file.size ? `${(file.size / 1024).toFixed(1)} KB` : '—', // Convert bytes to KB
+        modified: new Date(file.lastModified).toLocaleDateString(), // Format date
+        icon: file.path.endsWith('.jpg') || file.path.endsWith('.png') ? ImageIcon : FileText, // Basic icon logic
+      }));
+      setFiles(transformedFiles);
+    }
+    if (tenat) {
+      setSiteData({
+        id: "1",
+        name: tenat.data.Item.data.name,
+        url: tenat.data.Item.data.domains[0].Domain,
+        status: tenat.data.Item.data.domains[0].Status,
+        customDomain: "www.myblog.com",
+        sslStatus: "active",
+      });
+    }
+  }, [fetchedFiles, tenat]);
+
+  const [siteData, setSiteData] = useState({
+    id: "",
+    name: "",
+    url: "",
+    status: "",
+    customDomain: "",
+    sslStatus: "",
+  })
   const [activeSection, setActiveSection] = useState("files")
-  const [files, setFiles] = useState(sampleFiles)
   const [currentPath, setCurrentPath] = useState(["root"])
   const [uploadProgress, setUploadProgress] = useState(0)
   const [isUploading, setIsUploading] = useState(false)
